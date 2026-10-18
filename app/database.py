@@ -10,7 +10,11 @@ DATABASE_URL = os.getenv(
     "postgresql://sirius:sirius@localhost:5432/sirius_food",
 )
 
-engine = create_engine(DATABASE_URL)
+# SQL_ECHO=true (по умолчанию) выводит SQL-запросы в терминал —
+# нужно для проверки INSERT/UPDATE при выполнении лабораторной работы.
+SQL_ECHO = os.getenv("SQL_ECHO", "true").lower() in ("1", "true", "yes")
+
+engine = create_engine(DATABASE_URL, echo=SQL_ECHO)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
