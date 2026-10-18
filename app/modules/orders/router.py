@@ -1,55 +1,48 @@
 """
-Модуль управления заказами.
-В исходной MVP-версии содержит смешение слоёв: HTTP-обработка,
-бизнес-проверки и SQL-запросы находятся в одной функции.
+Транспортный слой модуля orders (Круг 4: Frameworks & Drivers).
+
+Роутер — диспетчер: принимает HTTP-запрос, выполняет техническую
+валидацию, собирает слои, вызывает сервис и переводит исключения
+в HTTP-статусы. Бизнес-правил и SQL здесь нет.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.database import get_db
-from app.models import Order, User, MenuItem
 from app.schemas import OrderCreate
+from app.modules.orders.repository import OrderRepository
+from app.modules.orders.service import OrderService
 
 router = APIRouter()
 
 
 @router.post("/create")
 def create_order(payload: OrderCreate, db: Session = Depends(get_db)):
-    # Блок 1: Первичная техническая валидация параметров запроса.
+    # Техническая валидация уровня транспортного протокола.
     if payload.quantity <= 0:
         raise HTTPException(
             status_code=400,
             detail="Количество должно быть больше нуля",
         )
 
-    # Блок 2: Бизнес-проверки предметной области с обращением к СУБД.
-    user = db.query(User).filter(User.id == payload.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    # Сборка архитектурных слоёв.
+    repository = OrderRepository(db)
+    service = OrderService(repository)
 
-    item = db.query(MenuItem).filter(MenuItem.id == payload.item_id).first()
-    if not item:
-        raise HTTPException(status_code=404, detail="Блюдо не найдено")
-
-    if not item.is_available:
-        raise HTTPException(status_code=400, detail="Блюдо недоступно")
-
-    total_cost = item.price * payload.quantity
-    if user.balance < total_cost:
-        raise HTTPException(
-            status_code=400,
-            detail="Недостаточно средств на балансе студента",
+    # Делегирование выполнения сценария слою бизнес-логики.
+    try:
+        order_id = service.create_order(
+            user_id=payload.user_id,
+            item_id=payload.item_id,
+            quantity=payload.quantity,
         )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        # Трансляция внутреннего исключения в HTTP-статус.
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Блок 3: Инфраструктурный код сохранения изменений.
-    user.balance -= total_cost
-    new_order = Order(
-        user_id=payload.user_id,
-        item_id=payload.item_id,
-        quantity=payload.quantity,
-        status="processing",
-    )
-    db.add(new_order)
-    db.commit()
-    db.refresh(new_order)
-
-    return {"status": "success", "order_id": new_order.id}
+    return {"status": "success", "order_id": order_id}
