@@ -5,7 +5,7 @@
 Сервис зависит только от абстракции репозитория (Protocol, ниже),
 а конкретная реализация передаётся в конструктор (инверсия зависимостей).
 """
-from typing import Optional, Protocol
+from typing import Protocol
 
 from app.core.exceptions import BusinessRuleError, NotFoundError
 
