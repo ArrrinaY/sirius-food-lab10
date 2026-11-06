@@ -1,7 +1,7 @@
 """
 Определение ORM-моделей предметной области «Сириус.Еда».
 """
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -13,6 +13,43 @@ class User(Base):
     phone = Column(String, nullable=True)
     balance = Column(Float, default=0.0)
     is_blocked = Column(Boolean, default=False)
+    # bcrypt-хеш пароля. В открытом виде пароль нигде не хранится.
+    password_hash = Column(String, nullable=False)
+    # Роль пользователя (RBAC): student / cook / courier / admin.
+    role_id = Column(Integer, ForeignKey("roles.id"), nullable=False, index=True)
+
+    role = relationship("Role")
+
+
+class Role(Base):
+    """Роль пользователя: student, cook, courier, admin."""
+    __tablename__ = "roles"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(50), unique=True, nullable=False)
+
+
+class RefreshToken(Base):
+    """
+    Refresh-токен для обновления access-токена.
+
+    Храним SHA-256-хеш токена, а не сам токен: при утечке БД
+    злоумышленник не получит действующие токены.
+    """
+    __tablename__ = "refresh_tokens"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    token_hash = Column(String, unique=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    is_revoked = Column(Boolean, default=False)
+
+    user = relationship("User")
+
+
+class MenuCategory(Base):
+    """Категория меню (кешируется с ключом menu:category:{id})."""
+    __tablename__ = "menu_categories"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
 
 
 class MenuItem(Base):
@@ -21,6 +58,9 @@ class MenuItem(Base):
     name = Column(String, nullable=False)
     price = Column(Float, nullable=False)
     is_available = Column(Boolean, default=True)
+    # Категория необязательна: блюдо без категории видно в общем меню.
+    category_id = Column(Integer, ForeignKey("menu_categories.id"), nullable=True)
+    category = relationship("MenuCategory")
 
 
 class Order(Base):

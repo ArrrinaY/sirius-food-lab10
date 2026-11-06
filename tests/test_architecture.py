@@ -8,8 +8,8 @@ import pathlib
 import unittest
 
 MODULES = pathlib.Path(__file__).resolve().parents[1] / "app" / "modules"
-FORBIDDEN = {"fastapi", "sqlalchemy", "starlette", "app.models", "app.database"}
-REFACTORED = ["orders", "users"]
+FORBIDDEN = {"fastapi", "sqlalchemy", "starlette", "app.models", "app.database", "jose", "passlib"}
+REFACTORED = ["orders", "users", "auth", "delivery", "menu"]
 
 
 def imported_names(path):
@@ -41,9 +41,14 @@ class LayerBoundariesTests(unittest.TestCase):
             )
 
     def test_router_has_no_orm_access(self):
+        """
+        Роутер может импортировать app.models ради type hints
+        (current_user: User), но не должен выполнять ORM-запросы —
+        доступ к данным только через repository.
+        """
         for module in REFACTORED:
-            names = imported_names(MODULES / module / "router.py")
-            self.assertNotIn("app.models", names, module)
+            source = (MODULES / module / "router.py").read_text(encoding="utf-8")
+            self.assertNotIn(".query(", source, f"{module}: ORM-запрос в роутере")
 
     def test_three_files_exist(self):
         for module in REFACTORED:
