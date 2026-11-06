@@ -6,7 +6,7 @@
 """
 from sqlalchemy.orm import Session
 
-from app.models import Order, User, MenuItem
+from app.models import MenuItem, Order, User
 
 
 class OrderRepository:
@@ -54,3 +54,17 @@ class OrderRepository:
         self.db.commit()
         self.db.refresh(new_order)
         return new_order.id
+
+    def get_order(self, order_id: int):
+        """Извлечение заказа по идентификатору."""
+        return self.db.query(Order).filter(Order.id == order_id).first()
+
+    def set_order_status(self, order, status: str) -> None:
+        """Сохранение нового статуса заказа."""
+        order.status = status
+        self.db.add(order)
+        self.db.commit()
+
+    def list_orders_by_status(self, status: str) -> list:
+        """Список заказов с указанным статусом."""
+        return self.db.query(Order).filter(Order.status == status).all()

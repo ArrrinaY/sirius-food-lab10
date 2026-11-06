@@ -5,7 +5,7 @@
 """
 from sqlalchemy.orm import Session
 
-from app.models import User
+from app.models import Role, User
 
 
 class UserRepository:
@@ -15,20 +15,30 @@ class UserRepository:
         self.db = db
 
     def get_user_by_id(self, user_id: int):
-        """Извлечение пользователя по идентификатору."""
+        """Извлечение пользователя по идентификатору (с ролью)."""
         return self.db.query(User).filter(User.id == user_id).first()
 
     def get_user_by_email(self, email: str):
         """Извлечение пользователя по email (для проверки уникальности)."""
         return self.db.query(User).filter(User.email == email).first()
 
-    def create_user(self, email: str, phone):
-        """Создание пользователя с нулевым балансом. Возвращает (id, email)."""
+    def get_role_id(self, name: str):
+        """Идентификатор роли по названию (RBAC)."""
+        role = self.db.query(Role).filter(Role.name == name).first()
+        return role.id if role else None
+
+    def create_user(self, email: str, phone, password_hash: str, role_id: int):
+        """
+        Создание пользователя с нулевым балансом, хешем пароля и ролью.
+        Возвращает (id, email).
+        """
         new_user = User(
             email=email,
             phone=phone,
             balance=0.0,
             is_blocked=False,
+            password_hash=password_hash,
+            role_id=role_id,
         )
         self.db.add(new_user)
         self.db.commit()

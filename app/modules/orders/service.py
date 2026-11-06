@@ -7,7 +7,7 @@
 """
 from typing import Protocol
 
-from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.core.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
 
 
 class OrderRepositoryProtocol(Protocol):
@@ -20,6 +20,12 @@ class OrderRepositoryProtocol(Protocol):
     def update_user_balance(self, user, new_balance: float) -> None: ...
 
     def save_order(self, user_id: int, item_id: int, quantity: int) -> int: ...
+
+    def get_order(self, order_id: int): ...
+
+    def set_order_status(self, order, status: str) -> None: ...
+
+    def list_orders_by_status(self, status: str) -> list: ...
 
 
 class OrderService:
@@ -61,3 +67,44 @@ class OrderService:
         # Делегирование операции сохранения инфраструктурному слою.
         order_id = self.repository.save_order(user_id, item_id, quantity)
         return order_id
+
+    def cancel_order(self, order_id: int, current_user_id: int) -> None:
+        """
+        Отмена заказа. Закрывает уязвимость IDOR: проверяется, что заказ
+        принадлежит именно текущему пользователю (id берётся из JWT,
+        а не из запроса). Проверка сознательно находится в Service —
+        это бизнес-правило, которое можно протестировать без HTTP
+        и переиспользовать в CLI или воркере.
+
+        Возбуждает NotFoundError (404), ForbiddenError (403),
+        BusinessRuleError (400).
+        """
+        order = self.repository.get_order(order_id)
+        if not order:
+            raise NotFoundError("Заказ не найден")
+
+        # Защита от IDOR: чужой заказ отменять нельзя.
+        if order.user_id != current_user_id:
+            raise ForbiddenError("Можно отменять только свои заказы")
+
+        if order.status != "processing":
+            raise BusinessRuleError("Можно отменить только заказ в обработке")
+
+        self.repository.set_order_status(order, "cancelled")
+
+    def get_kitchen_orders(self) -> list[dict]:
+        """
+        Очередь заказов для кухни: все заказы в обработке.
+        Доступ к сценарию разграничен ролью cook на транспортном слое.
+        """
+        orders = self.repository.list_orders_by_status("processing")
+        return [
+            {
+                "order_id": order.id,
+                "user_id": order.user_id,
+                "item_id": order.item_id,
+                "quantity": order.quantity,
+                "status": order.status,
+            }
+            for order in orders
+        ]

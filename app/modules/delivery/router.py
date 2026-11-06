@@ -1,90 +1,74 @@
 """
-Модуль управления доставкой.
-В исходной MVP-версии содержит смешение слоёв.
+Транспортный слой модуля delivery (Круг 4: Frameworks & Drivers).
+
+Назначение курьера — роль admin, завершение и просмотр доставок — роль
+courier (RBAC на транспортном слое). Проверка прав на конкретный объект
+(защита от IDOR) — в Service-слое.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+
+from app.core.dependencies import get_current_user, require_role
+from app.core.exceptions import ForbiddenError, NotFoundError
 from app.database import get_db
-from app.models import Delivery, Order, User
+from app.models import User
 from app.schemas import DeliveryAssign
+from app.modules.delivery.repository import DeliveryRepository
+from app.modules.delivery.service import DeliveryService
 
 router = APIRouter()
 
 
 @router.post("/assign")
-def assign_courier(payload: DeliveryAssign, db: Session = Depends(get_db)):
-    # Проверка существования заказа.
-    order = db.query(Order).filter(Order.id == payload.order_id).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Заказ не найден")
+def assign_courier(
+    payload: DeliveryAssign,
+    current_user: User = Depends(require_role("admin")),
+    db: Session = Depends(get_db),
+):
+    """Назначение курьера на заказ. Только для роли admin (RBAC)."""
+    service = DeliveryService(DeliveryRepository(db))
 
-    # Бизнес-правило: назначить курьера можно только на оплаченный заказ.
-    if order.status != "paid":
-        raise HTTPException(
-            status_code=400,
-            detail="Курьера можно назначить только на оплаченный заказ",
+    try:
+        delivery_id = service.assign_courier(
+            order_id=payload.order_id, courier_id=payload.courier_id
         )
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Проверка существования курьера.
-    courier = db.query(User).filter(User.id == payload.courier_id).first()
-    if not courier:
-        raise HTTPException(status_code=404, detail="Курьер не найден")
-    if courier.is_blocked:
-        raise HTTPException(
-            status_code=403,
-            detail="Курьер заблокирован и не может быть назначен",
-        )
-
-    # Бизнес-правило: один курьер — одна активная доставка.
-    active = db.query(Delivery).filter(
-        Delivery.courier_id == payload.courier_id,
-        Delivery.status == "in_progress",
-    ).first()
-    if active:
-        raise HTTPException(
-            status_code=400,
-            detail="У курьера уже есть активная доставка",
-        )
-
-    # Создание записи о доставке.
-    new_delivery = Delivery(
-        order_id=payload.order_id,
-        courier_id=payload.courier_id,
-        status="in_progress",
-    )
-    db.add(new_delivery)
-    db.commit()
-    db.refresh(new_delivery)
-
-    return {"status": "success", "delivery_id": new_delivery.id}
+    return {"status": "success", "delivery_id": delivery_id}
 
 
 @router.patch("/{delivery_id}/complete")
-def complete_delivery(delivery_id: int, db: Session = Depends(get_db)):
-    delivery = db.query(Delivery).filter(Delivery.id == delivery_id).first()
-    if not delivery:
-        raise HTTPException(status_code=404, detail="Доставка не найдена")
+def complete_delivery(
+    delivery_id: int,
+    current_user: User = Depends(require_role("courier")),
+    db: Session = Depends(get_db),
+):
+    """Завершение доставки. Только для роли courier (RBAC)."""
+    service = DeliveryService(DeliveryRepository(db))
 
-    if delivery.status == "completed":
-        raise HTTPException(
-            status_code=400,
-            detail="Доставка уже завершена",
-        )
-    if delivery.status == "cancelled":
-        raise HTTPException(
-            status_code=400,
-            detail="Отменённую доставку нельзя завершить",
-        )
-
-    delivery.status = "completed"
-
-    # Синхронное обновление статуса заказа.
-    order = db.query(Order).filter(Order.id == delivery.order_id).first()
-    if order:
-        order.status = "delivered"
-        db.add(order)
-
-    db.add(delivery)
-    db.commit()
+    try:
+        # Проверка «доставка принадлежит этому курьеру» (IDOR) — в Service.
+        service.complete_delivery(delivery_id, current_user.id)
+    except NotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ForbiddenError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {"status": "success"}
+
+
+@router.get("/my")
+def my_deliveries(
+    current_user: User = Depends(require_role("courier")),
+    db: Session = Depends(get_db),
+):
+    """Доставки текущего курьера. Чужие доставки не видны (IDOR)."""
+    service = DeliveryService(DeliveryRepository(db))
+    return service.my_deliveries(current_user.id)

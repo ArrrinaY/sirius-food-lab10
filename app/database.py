@@ -2,19 +2,17 @@
 Модуль инициализации подключения к СУБД PostgreSQL.
 """
 import os
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://sirius:sirius@localhost:5432/sirius_food",
-)
+from app.core.config import settings
 
 # SQL_ECHO=true (по умолчанию) выводит SQL-запросы в терминал —
-# нужно для проверки INSERT/UPDATE при выполнении лабораторной работы.
+# нужно для проверки INSERT/UPDATE при выполнении лабораторных работ.
 SQL_ECHO = os.getenv("SQL_ECHO", "true").lower() in ("1", "true", "yes")
 
-engine = create_engine(DATABASE_URL, echo=SQL_ECHO)
+engine = create_engine(settings.DATABASE_URL, echo=SQL_ECHO)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

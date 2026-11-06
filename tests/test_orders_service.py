@@ -6,18 +6,20 @@ Unit-тесты OrderService. Не требуют СУБД, FastAPI и SQLAlchem
 import unittest
 from types import SimpleNamespace
 
-from app.core.exceptions import BusinessRuleError, NotFoundError
+from app.core.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
 from app.modules.orders.service import OrderService
 
 
 class FakeOrderRepository:
     """Заглушка репозитория заказов, хранящая данные в памяти."""
 
-    def __init__(self, users=None, items=None):
+    def __init__(self, users=None, items=None, orders=None):
         self.users = {u.id: u for u in (users or [])}
         self.items = {i.id: i for i in (items or [])}
+        self.orders = {o.id: o for o in (orders or [])}
         self.saved_orders = []
         self.balance_updates = []
+        self.status_updates = []
 
     def get_user_by_id(self, user_id):
         return self.users.get(user_id)
@@ -32,6 +34,16 @@ class FakeOrderRepository:
     def save_order(self, user_id, item_id, quantity):
         self.saved_orders.append((user_id, item_id, quantity))
         return len(self.saved_orders)
+
+    def get_order(self, order_id):
+        return self.orders.get(order_id)
+
+    def set_order_status(self, order, status):
+        order.status = status
+        self.status_updates.append((order.id, status))
+
+    def list_orders_by_status(self, status):
+        return [o for o in self.orders.values() if o.status == status]
 
 
 def make_service(balance=500.0, price=100.0, available=True):
@@ -92,6 +104,55 @@ class OrderServiceTests(unittest.TestCase):
         service, _, _ = make_service()
         with self.assertRaises(ValueError):
             service.create_order(user_id=999, item_id=10, quantity=1)
+
+
+class CancelOrderTests(unittest.TestCase):
+    """Защита от IDOR при отмене заказа."""
+
+    def make_cancel_service(self, order_owner_id=1, status="processing"):
+        order = SimpleNamespace(id=5, user_id=order_owner_id, status=status)
+        repo = FakeOrderRepository(orders=[order])
+        return OrderService(repo), repo, order
+
+    def test_cancel_own_order(self):
+        service, repo, order = self.make_cancel_service(order_owner_id=1)
+        service.cancel_order(5, current_user_id=1)
+        self.assertEqual(order.status, "cancelled")
+        self.assertEqual(repo.status_updates, [(5, "cancelled")])
+
+    def test_cancel_foreign_order_forbidden(self):
+        """IDOR: пользователь 2 не может отменить заказ пользователя 1."""
+        service, repo, order = self.make_cancel_service(order_owner_id=1)
+        with self.assertRaises(ForbiddenError) as ctx:
+            service.cancel_order(5, current_user_id=2)
+        self.assertEqual(str(ctx.exception), "Можно отменять только свои заказы")
+        self.assertEqual(order.status, "processing")  # заказ не изменился
+        self.assertEqual(repo.status_updates, [])
+
+    def test_cancel_missing_order_not_found(self):
+        service, _, _ = self.make_cancel_service()
+        with self.assertRaises(NotFoundError) as ctx:
+            service.cancel_order(999, current_user_id=1)
+        self.assertEqual(str(ctx.exception), "Заказ не найден")
+
+    def test_cancel_processed_order_rejected(self):
+        service, _, order = self.make_cancel_service(status="delivered")
+        with self.assertRaises(BusinessRuleError):
+            service.cancel_order(5, current_user_id=1)
+        self.assertEqual(order.status, "delivered")
+
+
+class KitchenOrdersTests(unittest.TestCase):
+    def test_kitchen_returns_only_processing(self):
+        orders = [
+            SimpleNamespace(id=1, user_id=1, item_id=10, quantity=2, status="processing"),
+            SimpleNamespace(id=2, user_id=2, item_id=11, quantity=1, status="delivered"),
+        ]
+        repo = FakeOrderRepository(orders=orders)
+        result = OrderService(repo).get_kitchen_orders()
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["order_id"], 1)
+        self.assertEqual(result[0]["status"], "processing")
 
 
 if __name__ == "__main__":
