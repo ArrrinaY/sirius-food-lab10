@@ -183,18 +183,31 @@ CSV-выгрузки замеров: `docs/locust/baseline_stats.csv`, `docs/loc
 
 ### Как повторить замеры
 
+Ubuntu/bash:
+
 ```bash
 docker compose up -d db redis
 # терминал 1 — baseline («до кеша»), каждый запрос идёт в PostgreSQL
 CACHE_ENABLED=false SQL_ECHO=false uvicorn app.main:app --port 8010
 # терминал 2 — рабочий инстанс с кешем (прогрев на старте)
 uvicorn app.main:app --port 8020
-# терминал 3 — нагрузка (Windows: $env:CACHE_ENABLED="false" вместо префикса)
+# терминал 3 — нагрузка
 locust -f locustfile.py --host=http://127.0.0.1:8010 --headless --only-summary -u 50 -r 10 -t 15s --csv docs/locust/baseline
 locust -f locustfile.py --host=http://127.0.0.1:8020 --headless --only-summary -u 50 -r 10 -t 15s --csv docs/locust/with_cache
 ```
 
-(в проекте ярлыка в PATH нет — использовать `python -m locust`).
+Windows/PowerShell (то же самое; переменные окружения в PS ставятся через `$env:` и живут только в текущем окне):
+
+```powershell
+docker compose up -d db redis
+# терминал 1 — baseline («до кеша»)
+$env:CACHE_ENABLED="false"; $env:SQL_ECHO="false"; python -m uvicorn app.main:app --port 8010
+# терминал 2 — рабочий инстанс с кешем (новое окно, ничего ставить не нужно)
+python -m uvicorn app.main:app --port 8020
+# терминал 3 — нагрузка
+python -m locust -f locustfile.py --host=http://127.0.0.1:8010 --headless --only-summary -u 50 -r 10 -t 15s --csv docs/locust/baseline
+python -m locust -f locustfile.py --host=http://127.0.0.1:8020 --headless --only-summary -u 50 -r 10 -t 15s --csv docs/locust/with_cache
+```
 
 ---
 
