@@ -171,6 +171,13 @@ class MenuCacheApiTests(unittest.TestCase):
         """menu:category:{id} живёт 10 минут — дольше, чем menu:all (5 мин)."""
         category_id = self._ensure_category()
 
+        # Ключ мог остаться от живого приложения/прошлого прогона —
+        # удаляем, чтобы замер TTL отражал именно эту запись кеша.
+        try:
+            redis_client.delete(CATEGORY_KEY.format(id=category_id))
+        except Exception:
+            pass
+
         response = self.client.get(f"/menu/categories/{category_id}")
         self.assertEqual(response.status_code, 200)
         self.assertIsInstance(response.json(), list)

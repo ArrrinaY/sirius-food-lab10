@@ -62,7 +62,7 @@ class MenuRepository:
         self.db = db
         self.cache = cache if cache is not None else redis_client
 
-    # ---------- кеш: тонкая обвязка с fail-open -----------------------
+    #  кеш: тонкая обвязка с fail-open 
 
     def _cache_get(self, key: str) -> str | None:
         try:
@@ -84,7 +84,7 @@ class MenuRepository:
         except RedisError:
             logger.warning("Redis недоступен при инвалидации %s", keys)
 
-    # ---------- Cache-Aside c защитой от stampede ----------------------
+    # Cache-Aside c защитой от stampede 
 
     def _cache_aside(self, key: str, ttl: int, loader) -> list[dict]:
         """
@@ -115,7 +115,7 @@ class MenuRepository:
                 return json.loads(cached)
             return loader()
 
-    # ---------- чтение (горячие пути) ---------------------------------
+    #  чтение (горячие пути) 
 
     def _list_items_from_db(self) -> list[dict]:
         items = self.db.query(MenuItem).order_by(MenuItem.id).all()
@@ -157,7 +157,7 @@ class MenuRepository:
             key, CATEGORY_TTL, lambda: self._items_by_category_from_db(category_id)
         )
 
-    # ---------- точечные операции (мутации и проверки) ------------------
+    #  точечные операции (мутации и проверки) 
 
     def get_by_id(self, item_id: int) -> MenuItem | None:
         """Точечное чтение по id для мутаций — без кеша (не горячий путь)."""
@@ -185,7 +185,7 @@ class MenuRepository:
         self.db.add(item)
         self.db.commit()
 
-    # ---------- инвалидация и прогрев -----------------------------------
+    #  инвалидация и прогрев 
 
     def invalidate_cache(self) -> None:
         """

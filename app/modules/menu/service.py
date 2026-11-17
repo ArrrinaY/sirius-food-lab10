@@ -47,7 +47,7 @@ class MenuService:
     def __init__(self, repository: MenuRepositoryProtocol):
         self.repository = repository
 
-    # ---------- чтение (горячие пути, кеш внутри repository) ----------
+    # чтение (горячие пути, кеш внутри repository) 
 
     def menu_items(self) -> list[dict]:
         """Всё меню. Главная «горячая» точка приложения (обеденный пик)."""
@@ -62,7 +62,7 @@ class MenuService:
             raise MenuCategoryNotFoundError("Категория не найдена")
         return self.repository.items_by_category(category_id)
 
-    # ---------- мутации (+ событийная инвалидация кеша) ---------------
+    # мутации (+ событийная инвалидация кеша)
 
     def create_item(self, name: str, price: float, category_id: int | None) -> int:
         """

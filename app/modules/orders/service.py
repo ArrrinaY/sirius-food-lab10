@@ -4,10 +4,21 @@
 ВАЖНО: в этом файле запрещены импорты fastapi и sqlalchemy.
 Сервис зависит только от абстракции репозитория (Protocol, ниже),
 а конкретная реализация передаётся в конструктор (инверсия зависимостей).
+
+ЛР № 5: сервис публикует фоновые задачи Celery (.delay()) после создания
+заказа — «заказ создан» это бизнес-событие. Celery здесь вызывается,
+но не конфигурируется: приложение и очереди живут в app/core/celery_app.py,
+исполняемый код задач — в app/tasks/. Публикация fail-open: брокер
+недоступен → заказ не отменяется, ошибка логируется.
 """
 from typing import Protocol
 
+import logging
+
 from app.core.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
+from app.tasks.orders import generate_order_pdf, send_order_email, send_order_sms
+
+logger = logging.getLogger(__name__)
 
 
 class OrderRepositoryProtocol(Protocol):
@@ -66,7 +77,39 @@ class OrderService:
 
         # Делегирование операции сохранения инфраструктурному слою.
         order_id = self.repository.save_order(user_id, item_id, quantity)
+
+        # «Заказ создан» — бизнес-событие, поэтому публикация фоновых
+        # операций (чек, email, SMS) находится в Service, а не в Router:
+        # API лишь отвечает «заказ принят», воркеры доделывают остальное.
+        self._dispatch_notifications(order_id, user)
+
         return order_id
+
+    def _dispatch_notifications(self, order_id: int, user) -> None:
+        """
+        Публикация фоновых задач Celery (ЛР № 5) после создания заказа.
+
+        .delay() сериализует аргументы в JSON, кладёт сообщение в брокер
+        (Redis) и ВОЗВРАЩАЕТСЯ МГНОВЕННО: HTTP-ответ больше не ждёт
+        генерацию PDF и доставку уведомлений (4+ сек → ~50 мс).
+
+        Fail-open: если брокер недоступен, заказ уже зафиксирован в БД
+        (деньги списаны) — падать ради уведомлений нельзя. Ошибка
+        логируется, чтобы оператор мог повторить публикацию вручную.
+        """
+        try:
+            generate_order_pdf.delay(order_id)
+            email = getattr(user, "email", None)
+            if email:
+                send_order_email.delay(order_id, email)
+            phone = getattr(user, "phone", None)
+            if phone:
+                send_order_sms.delay(order_id, phone)
+        except Exception:  # noqa: BLE001 — уведомления не отменяют заказ
+            logger.warning(
+                "Не удалось поставить фоновые задачи по заказу %s", order_id,
+                exc_info=True,
+            )
 
     def cancel_order(self, order_id: int, current_user_id: int) -> None:
         """

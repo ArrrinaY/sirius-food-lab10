@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     # Кеширование меню на Redis (ЛР № 4). false — «baseline-режим»:
     # каждый запрос идёт в PostgreSQL (для снятия замеров «до кеша»).
     CACHE_ENABLED: bool = True
+    # Адрес микросервиса доставки (ЛР № 6). В docker-compose/проде
+    # переопределяется на имя контейнера: delivery:50051.
+    DELIVERY_SERVICE_HOST: str = "localhost"
+    DELIVERY_SERVICE_PORT: int = 50051
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -14,6 +14,8 @@ services:
   redis:
     image: redis:7
     ports:
-      - "6379:6379"
+      # REDIS_PORT позволяет сменить хост-порт, если 6379 занят
+      # локальной службой Redis (например, старой версией 5.x).
+      - "${REDIS_PORT:-6379}:6379"
 volumes:
   pg_data:

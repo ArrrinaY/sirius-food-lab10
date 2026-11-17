@@ -5,6 +5,7 @@ Unit-тесты OrderService. Не требуют СУБД, FastAPI и SQLAlchem
 """
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from app.core.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
 from app.modules.orders.service import OrderService
@@ -54,6 +55,25 @@ def make_service(balance=500.0, price=100.0, available=True):
 
 
 class OrderServiceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """
+        Публикация задач Celery в брокер подменяется заглушкой:
+        unit-тесты не должны требовать запущенного Redis-брокера
+        (ЛР № 5 — .delay() в Service вызывается на happy-path).
+        """
+        cls._patches = [
+            patch("app.modules.orders.service." + name)
+            for name in ("generate_order_pdf", "send_order_email", "send_order_sms")
+        ]
+        for p in cls._patches:
+            p.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        for p in cls._patches:
+            p.stop()
+
     def test_success_debits_balance_and_saves_order(self):
         service, repo, user = make_service(balance=500, price=100)
         order_id = service.create_order(user_id=1, item_id=10, quantity=3)

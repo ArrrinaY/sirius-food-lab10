@@ -44,6 +44,15 @@ class DeliveryRepository:
     def get_delivery(self, delivery_id: int):
         return self.db.query(Delivery).filter(Delivery.id == delivery_id).first()
 
+    def get_delivery_by_order_id(self, order_id: int):
+        """Последняя доставка по ID заказа (для GetDelivery / TrackDelivery)."""
+        return (
+            self.db.query(Delivery)
+            .filter(Delivery.order_id == order_id)
+            .order_by(Delivery.id.desc())
+            .first()
+        )
+
     def complete_delivery(self, delivery) -> None:
         delivery.status = "completed"
 
