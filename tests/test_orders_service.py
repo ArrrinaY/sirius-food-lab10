@@ -32,8 +32,8 @@ class FakeOrderRepository:
         self.balance_updates.append((user.id, new_balance))
         user.balance = new_balance
 
-    def save_order(self, user_id, item_id, quantity):
-        self.saved_orders.append((user_id, item_id, quantity))
+    def save_order(self, user_id, item_id, quantity, charged_amount):
+        self.saved_orders.append((user_id, item_id, quantity, charged_amount))
         return len(self.saved_orders)
 
     def get_order(self, order_id):
@@ -43,8 +43,8 @@ class FakeOrderRepository:
         order.status = status
         self.status_updates.append((order.id, status))
 
-    def list_orders_by_status(self, status):
-        return [o for o in self.orders.values() if o.status == status]
+    def list_kitchen_orders(self):
+        return [(o, "pending") for o in self.orders.values() if o.status == "paid"]
 
 
 def make_service(balance=500.0, price=100.0, available=True):
@@ -80,7 +80,7 @@ class OrderServiceTests(unittest.TestCase):
         self.assertEqual(order_id, 1)
         self.assertEqual(user.balance, 200)
         self.assertEqual(repo.balance_updates, [(1, 200)])
-        self.assertEqual(repo.saved_orders, [(1, 10, 3)])
+        self.assertEqual(repo.saved_orders, [(1, 10, 3, 300.0)])
 
     def test_user_not_found(self):
         service, repo, _ = make_service()
@@ -163,16 +163,16 @@ class CancelOrderTests(unittest.TestCase):
 
 
 class KitchenOrdersTests(unittest.TestCase):
-    def test_kitchen_returns_only_processing(self):
+    def test_kitchen_returns_pending_entries(self):
         orders = [
-            SimpleNamespace(id=1, user_id=1, item_id=10, quantity=2, status="processing"),
+            SimpleNamespace(id=1, user_id=1, item_id=10, quantity=2, status="paid"),
             SimpleNamespace(id=2, user_id=2, item_id=11, quantity=1, status="delivered"),
         ]
         repo = FakeOrderRepository(orders=orders)
         result = OrderService(repo).get_kitchen_orders()
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["order_id"], 1)
-        self.assertEqual(result[0]["status"], "processing")
+        self.assertEqual(result[0]["status"], "pending")
 
 
 if __name__ == "__main__":

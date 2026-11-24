@@ -19,6 +19,8 @@ class DeliveryRepositoryProtocol(Protocol):
 
     def create_delivery(self, order_id: int, courier_id: int) -> int: ...
 
+    def get_delivery_by_order_id(self, order_id: int): ...
+
     def get_delivery(self, delivery_id: int): ...
 
     def complete_delivery(self, delivery) -> None: ...
@@ -46,6 +48,8 @@ class DeliveryService:
             raise BusinessRuleError(
                 "Курьера можно назначить только на оплаченный заказ"
             )
+        if self.repository.get_delivery_by_order_id(order_id):
+            raise BusinessRuleError("Заказу уже назначена доставка")
 
         courier = self.repository.get_courier(courier_id)
         if not courier:

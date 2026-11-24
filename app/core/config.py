@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     # Адрес микросервиса доставки (ЛР № 6). В docker-compose/проде
     # переопределяется на имя контейнера: delivery:50051.
     DELIVERY_SERVICE_HOST: str = "localhost"
-    DELIVERY_SERVICE_PORT: int = 50051
+    DELIVERY_SERVICE_PORT: int = 50061
+    RABBITMQ_URL: str = "amqp://sirius:sirius@127.0.0.1:5672/"
+    STRIPE_SECRET_KEY: str = ""
+    STRIPE_WEBHOOK_SECRET: str = ""
+    PAYMENT_CURRENCY: str = "rub"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -29,7 +29,7 @@ class FakeRepo:
     def update_user_balance(self, user, new_balance):
         user.balance = new_balance
 
-    def save_order(self, user_id, item_id, quantity):
+    def save_order(self, user_id, item_id, quantity, charged_amount):
         self.saved.append((user_id, item_id, quantity))
         return len(self.saved)
 

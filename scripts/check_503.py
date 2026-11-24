@@ -72,3 +72,5 @@ status, body = call(
     payload={"order_id": order_id, "courier_id": courier_id},
 )
 print(f"assign при недоступном gRPC-сервисе: HTTP {status}: {body}")
+if status != 503:
+    raise SystemExit(f"Ожидался HTTP 503, получен {status}")

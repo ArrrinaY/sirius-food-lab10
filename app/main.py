@@ -12,14 +12,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.observability import ObservabilityMiddleware, metrics_response, setup_logging
 from app.database import Base, engine, SessionLocal
 from app.modules.auth.router import router as auth_router
 from app.modules.users.router import router as users_router
 from app.modules.menu.router import router as menu_router
 from app.modules.orders.router import router as orders_router
 from app.modules.delivery.router import router as delivery_router
+from app.modules.loyalty.router import router as loyalty_router
+from app.modules.payments.router import router as payments_router
 
 Base.metadata.create_all(bind=engine)
+setup_logging("monolith")
 
 
 def seed_roles() -> None:
@@ -79,14 +83,19 @@ app.add_middleware(
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Correlation-ID", "Idempotency-Key"],
+    expose_headers=["X-Correlation-ID"],
 )
+app.add_middleware(ObservabilityMiddleware)
+app.add_api_route("/metrics", metrics_response, include_in_schema=False)
 
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(users_router, prefix="/users", tags=["users"])
 app.include_router(menu_router, prefix="/menu", tags=["menu"])
 app.include_router(orders_router, prefix="/orders", tags=["orders"])
 app.include_router(delivery_router, prefix="/delivery", tags=["delivery"])
+app.include_router(loyalty_router, prefix="/loyalty", tags=["loyalty"])
+app.include_router(payments_router, prefix="/payments", tags=["payments"])
 
 # Startup-событие прогрева кеша (после создания app).
 app.add_event_handler("startup", _cache_warmup)

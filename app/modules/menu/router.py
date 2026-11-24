@@ -30,6 +30,14 @@ def menu_items(db: Session = Depends(get_db)):
     return MenuService(MenuRepository(db)).menu_items()
 
 
+@router.get("/items/{item_id}")
+def menu_item(item_id: int, db: Session = Depends(get_db)):
+    try:
+        return MenuService(MenuRepository(db)).menu_item(item_id)
+    except MenuItemNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
 @router.get("/categories")
 def menu_categories(db: Session = Depends(get_db)):
     """Список категорий меню (кеш menu:categories, TTL 10 минут)."""

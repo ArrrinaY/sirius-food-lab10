@@ -1,7 +1,7 @@
 """
 Определение ORM-моделей предметной области «Сириус.Еда».
 """
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime
+from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, JSON, Numeric, CheckConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -69,7 +69,13 @@ class Order(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     item_id = Column(Integer, ForeignKey("menu_items.id"))
     quantity = Column(Integer, nullable=False)
+    # Сумма, зарезервированная при создании; цена меню может измениться.
+    charged_amount = Column(Numeric(12, 2), nullable=True)
     status = Column(String, default="processing")
+    payment_method = Column(String(16), nullable=False, default="balance", server_default="balance")
+    original_amount = Column(Numeric(12, 2), nullable=True)
+    discount_amount = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
+    points_spent = Column(Numeric(12, 2), nullable=False, default=0, server_default="0")
     user = relationship("User")
     item = relationship("MenuItem")
 
@@ -82,3 +88,100 @@ class Delivery(Base):
     status = Column(String, default="pending")
     order = relationship("Order")
     courier = relationship("User")
+
+
+class KitchenOrder(Base):
+    __tablename__ = "kitchen_orders"
+    order_id = Column(Integer, ForeignKey("orders.id"), primary_key=True)
+    status = Column(String, nullable=False)
+
+
+class ProcessedEvent(Base):
+    __tablename__ = "processed_events"
+    consumer = Column(String(32), primary_key=True)
+    event_id = Column(String(36), primary_key=True)
+
+
+class OutboxEvent(Base):
+    __tablename__ = "outbox"
+    id = Column(Integer, primary_key=True)
+    routing_key = Column(String(40), nullable=False)
+    payload = Column(JSON, nullable=False)
+    correlation_id = Column(String(128), nullable=False)
+    published_at = Column(DateTime(timezone=True), index=True)
+
+
+class PromoCode(Base):
+    __tablename__ = "promo_codes"
+    id = Column(Integer, primary_key=True)
+    code = Column(String(64), unique=True, nullable=False)
+    discount_type = Column(String(16), nullable=False)
+    discount_value = Column(Numeric(12, 2), nullable=False)
+    valid_from = Column(DateTime(timezone=True), nullable=False)
+    valid_until = Column(DateTime(timezone=True), nullable=False)
+    max_uses = Column(Integer, nullable=False)
+    current_uses = Column(Integer, nullable=False, default=0)
+    min_order_amount = Column(Numeric(12, 2), nullable=False, default=0)
+    is_active = Column(Boolean, nullable=False, default=True)
+    once_per_user = Column(Boolean, nullable=False, default=True)
+    __table_args__ = (
+        CheckConstraint("discount_type IN ('percent', 'fixed')"),
+        CheckConstraint("discount_value > 0 AND (discount_type != 'percent' OR discount_value <= 100)"),
+        CheckConstraint("max_uses > 0 AND current_uses >= 0 AND current_uses <= max_uses"),
+        CheckConstraint("min_order_amount >= 0 AND valid_until > valid_from"),
+    )
+
+
+class PromoCodeUsage(Base):
+    __tablename__ = "promo_code_usages"
+    order_id = Column(Integer, ForeignKey("orders.id"), primary_key=True)
+    promo_id = Column(Integer, ForeignKey("promo_codes.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+
+class LoyaltyAccount(Base):
+    __tablename__ = "loyalty_accounts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    balance = Column(Numeric(12, 2), nullable=False, default=0)
+    total_earned = Column(Numeric(12, 2), nullable=False, default=0)
+    tier = Column(String(8), nullable=False, default="Bronze")
+    __table_args__ = (CheckConstraint("tier IN ('Bronze', 'Silver', 'Gold')"),)
+
+
+class LoyaltyTransaction(Base):
+    __tablename__ = "loyalty_transactions"
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("loyalty_accounts.id"), nullable=False, index=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    type = Column(String(8), nullable=False)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    idempotency_key = Column(String(100), unique=True, nullable=False)
+    __table_args__ = (CheckConstraint("type IN ('earn', 'spend', 'refund', 'revoke')"),)
+
+
+class PromoCompensation(Base):
+    __tablename__ = "promo_compensations"
+    compensation_key = Column(String(100), primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), unique=True, nullable=False)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), unique=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    currency = Column(String(3), nullable=False)
+    status = Column(String(24), nullable=False, default="pending")
+    gateway_payment_id = Column(String(128), unique=True, nullable=True)
+    idempotency_key = Column(String(128), unique=True, nullable=False)
+    client_secret = Column(String(255), nullable=True)
+    error_code = Column(String(64), nullable=True)
+    __table_args__ = (CheckConstraint("amount > 0"),)
+
+
+class PaymentWebhook(Base):
+    __tablename__ = "payment_webhooks"
+    event_id = Column(String(128), primary_key=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), nullable=False)

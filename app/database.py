@@ -8,9 +8,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.core.config import settings
 
-# SQL_ECHO=true (по умолчанию) выводит SQL-запросы в терминал —
+# SQL_ECHO=true выводит SQL-запросы в терминал —
 # нужно для проверки INSERT/UPDATE при выполнении лабораторных работ.
-SQL_ECHO = os.getenv("SQL_ECHO", "true").lower() in ("1", "true", "yes")
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() in ("1", "true", "yes")
 
 engine = create_engine(settings.DATABASE_URL, echo=SQL_ECHO)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

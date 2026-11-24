@@ -16,6 +16,7 @@ from typing import Protocol
 import logging
 
 from app.core.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
+from app.core.order_events import ORDER_PAID, new_event
 from app.tasks.orders import generate_order_pdf, send_order_email, send_order_sms
 
 logger = logging.getLogger(__name__)
@@ -30,13 +31,15 @@ class OrderRepositoryProtocol(Protocol):
 
     def update_user_balance(self, user, new_balance: float) -> None: ...
 
-    def save_order(self, user_id: int, item_id: int, quantity: int) -> int: ...
+    def save_order(self, user_id: int, item_id: int, quantity: int, charged_amount: float) -> int: ...
 
     def get_order(self, order_id: int): ...
 
     def set_order_status(self, order, status: str) -> None: ...
 
-    def list_orders_by_status(self, status: str) -> list: ...
+    def list_kitchen_orders(self) -> list[tuple]: ...
+    def has_active_delivery(self, order_id: int) -> bool: ...
+    def save_payment(self, order, routing_key: str, payload: dict, correlation_id: str) -> None: ...
 
 
 class OrderService:
@@ -76,16 +79,33 @@ class OrderService:
         self.repository.update_user_balance(user, user.balance)
 
         # Делегирование операции сохранения инфраструктурному слою.
-        order_id = self.repository.save_order(user_id, item_id, quantity)
+        order_id = self.repository.save_order(user_id, item_id, quantity, total_cost)
 
         # «Заказ создан» — бизнес-событие, поэтому публикация фоновых
         # операций (чек, email, SMS) находится в Service, а не в Router:
         # API лишь отвечает «заказ принят», воркеры доделывают остальное.
-        self._dispatch_notifications(order_id, user)
+        self.dispatch_notifications(order_id, user)
 
         return order_id
 
-    def _dispatch_notifications(self, order_id: int, user) -> None:
+    def pay_order(self, order_id: int, user_id: int, correlation_id: str) -> dict | None:
+        """Подтвердить ранее зарезервированную оплату и записать событие атомарно."""
+        order = self.repository.get_order(order_id)
+        if not order:
+            raise NotFoundError("Заказ не найден")
+        if order.user_id != user_id:
+            raise ForbiddenError("Можно оплатить только свой заказ")
+        if order.status in ("paid", "delivered"):
+            return None
+        if getattr(order, "payment_method", "balance") == "external":
+            raise BusinessRuleError("Внешнюю оплату подтверждает только вебхук шлюза")
+        if order.status != "processing" or order.charged_amount is None:
+            raise BusinessRuleError("Этот заказ нельзя оплатить. Создайте новый заказ.")
+        event = new_event(order_id, user_id, order.charged_amount)
+        self.repository.save_payment(order, ORDER_PAID, event, correlation_id)
+        return event
+
+    def dispatch_notifications(self, order_id: int, user) -> None:
         """
         Публикация фоновых задач Celery (ЛР № 5) после создания заказа.
 
@@ -130,24 +150,28 @@ class OrderService:
         if order.user_id != current_user_id:
             raise ForbiddenError("Можно отменять только свои заказы")
 
-        if order.status != "processing":
-            raise BusinessRuleError("Можно отменить только заказ в обработке")
+        if order.status not in ("processing", "paid"):
+            raise BusinessRuleError("Можно отменить только заказ в обработке или оплаченный заказ")
+        if order.status == "paid":
+            if getattr(order, "payment_method", "balance") == "external":
+                raise BusinessRuleError("Для внешней оплаты выполните возврат через Stripe Dashboard")
+            if self.repository.has_active_delivery(order.id):
+                raise BusinessRuleError("Заказ уже передан курьеру")
 
         self.repository.set_order_status(order, "cancelled")
 
     def get_kitchen_orders(self) -> list[dict]:
         """
-        Очередь заказов для кухни: все заказы в обработке.
+        Очередь заказов, которые зарегистрировал consumer кухни.
         Доступ к сценарию разграничен ролью cook на транспортном слое.
         """
-        orders = self.repository.list_orders_by_status("processing")
         return [
             {
                 "order_id": order.id,
                 "user_id": order.user_id,
                 "item_id": order.item_id,
                 "quantity": order.quantity,
-                "status": order.status,
+                "status": status,
             }
-            for order in orders
+            for order, status in self.repository.list_kitchen_orders()
         ]

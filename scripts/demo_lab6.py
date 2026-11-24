@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models import Order, User  # noqa: E402
+from app.modules.delivery.grpc_client import DeliveryGrpcClient  # noqa: E402
 
 BASE = "http://localhost:8000"
 
@@ -96,33 +97,45 @@ status, body = call("POST", "/delivery/assign", admin_token,
 print(f"HTTP {status}: {body}")
 assert status == 200
 delivery_id = json.loads(body)["delivery_id"]
+delivery = DeliveryGrpcClient().get_delivery(order_id)
+assert delivery["delivery_id"] == delivery_id and delivery["status"] == "in_progress", delivery
+print(f"GetDelivery (gRPC): {delivery}")
 
 print("\n=== 3. Повторное назначение (бизнес-правило → 400) ===")
 status, body = call("POST", "/delivery/assign", admin_token,
                     payload={"order_id": order_id, "courier_id": courier_id})
 print(f"HTTP {status}: {body}")
+assert status == 400
 
 print(f"\n=== 4. GET /delivery/{order_id}/track (SSE, Server Streaming ~6 с) ===")
 status, body = call("GET", f"/delivery/{order_id}/track", student_token, timeout=60.0)
 print(f"HTTP {status}, поток:")
+assert status == 200
+stages = []
 for line in body.splitlines():
     if line.startswith("data: "):
+        stages.append(json.loads(line[6:]).get("status"))
         print(f"  {line[6:]}")
+assert stages == ["in_progress", "on_the_way", "delivered"], stages
 
 print("\n=== 5. PATCH /delivery/{id}/complete (courier, через gRPC) ===")
 status, body = call("PATCH", f"/delivery/{delivery_id}/complete", courier_token)
 print(f"HTTP {status}: {body}")
+assert status == 200 and json.loads(body)["delivery_status"] == "completed"
 
 print("\n=== 6. GET /delivery/my (courier, через gRPC) ===")
 status, body = call("GET", "/delivery/my", courier_token)
 print(f"HTTP {status}: {body}")
+assert status == 200 and any(d["delivery_id"] == delivery_id for d in json.loads(body))
 
 print("\n=== 7. PATCH complete от студента (RBAC → 403) ===")
 status, body = call("PATCH", f"/delivery/{delivery_id}/complete", student_token)
 print(f"HTTP {status}: {body}")
+assert status == 403
 
 print("\n=== 8. Повторное complete (уже завершена → 400) ===")
 status, body = call("PATCH", f"/delivery/{delivery_id}/complete", courier_token)
 print(f"HTTP {status}: {body}")
+assert status == 400
 
 print("\nДемонстрация завершена.")

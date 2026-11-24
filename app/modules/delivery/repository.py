@@ -15,10 +15,11 @@ class DeliveryRepository:
         self.db = db
 
     def get_order(self, order_id: int):
-        return self.db.query(Order).filter(Order.id == order_id).first()
+        return self.db.query(Order).filter(Order.id == order_id).with_for_update().first()
 
     def get_courier(self, courier_id: int):
-        return self.db.query(User).filter(User.id == courier_id).first()
+        courier = self.db.query(User).filter(User.id == courier_id).with_for_update().first()
+        return courier if courier and courier.role.name == "courier" else None
 
     def get_active_delivery(self, courier_id: int):
         return (

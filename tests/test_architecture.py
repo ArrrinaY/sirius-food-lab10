@@ -9,7 +9,7 @@ import unittest
 
 MODULES = pathlib.Path(__file__).resolve().parents[1] / "app" / "modules"
 FORBIDDEN = {"fastapi", "sqlalchemy", "starlette", "app.models", "app.database", "jose", "passlib"}
-REFACTORED = ["orders", "users", "auth", "delivery", "menu"]
+REFACTORED = ["orders", "users", "auth", "delivery", "menu", "loyalty", "payments"]
 
 
 def imported_names(path):

@@ -16,3 +16,9 @@ flower==2.2.0
 grpcio==1.85.1
 grpcio-tools==1.85.1
 protobuf==7.36.2
+aio-pika==9.5.7
+structlog==25.4.0
+prometheus-client==0.26.0
+httpx==0.27.2
+# ЛР № 9: системные метрики API (импортируется в app/core/use_metrics.py)
+psutil==7.2.2

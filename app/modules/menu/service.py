@@ -53,6 +53,16 @@ class MenuService:
         """Всё меню. Главная «горячая» точка приложения (обеденный пик)."""
         return self.repository.list_items()
 
+    def menu_item(self, item_id: int) -> dict:
+        item = self.repository.get_by_id(item_id)
+        if item is None:
+            raise MenuItemNotFoundError("Блюдо не найдено")
+        return {
+            "id": item.id, "name": item.name, "price": item.price,
+            "is_available": item.is_available,
+            "category": item.category.name if item.category else None,
+        }
+
     def categories(self) -> list[dict]:
         return self.repository.list_categories()
 
