@@ -109,9 +109,9 @@ JSON ресурсов содержит CPU процесса API (100% = одно
 
 ## 3. CI и запрет слияния
 
-Репозиторий: [SuperSlayQueen/sirius-food](https://github.com/SuperSlayQueen/sirius-food).
-Первый зелёный запуск main: [GitHub Actions](https://github.com/SuperSlayQueen/sirius-food/actions/runs/45246496223).
-Демонстрационный PR: [№ 1](https://github.com/SuperSlayQueen/sirius-food/pull/1).
+Репозиторий: [ArrrinaY/sirius-food-lab10](https://github.com/ArrrinaY/sirius-food-lab10).
+Первый зелёный запуск main: [GitHub Actions](https://github.com/ArrrinaY/sirius-food-lab10/actions/runs/45386244795).
+Демонстрационный PR: [№ 1](https://github.com/ArrrinaY/sirius-food-lab10/pull/1).
 
 Workflow `.github/workflows/test.yml` запускается на каждый push и pull_request.
 Он устанавливает зависимости, запускает 65 unit-тестов и интеграционные
